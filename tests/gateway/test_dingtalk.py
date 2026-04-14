@@ -273,3 +273,79 @@ class TestPlatformEnum:
 
     def test_dingtalk_in_platform_enum(self):
         assert Platform.DINGTALK.value == "dingtalk"
+
+
+# ---------------------------------------------------------------------------
+# SDK compatibility: dingtalk-stream >= 0.20 (issue #9752)
+# ---------------------------------------------------------------------------
+
+class TestIncomingHandlerSDKCompatibility:
+    """Test _IncomingHandler handles both old and new dingtalk-stream SDKs."""
+
+    def test_extract_chatbot_message_from_dict_data(self):
+        """New SDK (>= 0.20): message.data is a dict — reconstruct ChatbotMessage."""
+        from types import SimpleNamespace
+        from gateway.platforms.dingtalk import _IncomingHandler, DINGTALK_STREAM_AVAILABLE
+
+        # Simulate CallbackMessage with data dict
+        callback_msg = SimpleNamespace(data={
+            "msgId": "msg123",
+            "text": {"content": "hello"},
+            "senderId": "user1",
+            "senderNick": "Alice",
+            "senderStaffId": "staff1",
+            "conversationId": "conv1",
+            "conversationType": "2",
+            "conversationTitle": "Test Group",
+            "createAt": "1700000000000",
+            "sessionWebhook": "https://api.dingtalk.com/webhook",
+            "chatbotUserId": "bot1",
+            "msgtype": "text",
+        })
+
+        result = _IncomingHandler._extract_chatbot_message(callback_msg)
+        assert result is not None
+        assert result.message_id == "msg123"
+        assert result.text == {"content": "hello"}
+        assert result.sender_id == "user1"
+        assert result.sender_nick == "Alice"
+        assert result.conversation_id == "conv1"
+        assert result.session_webhook == "https://api.dingtalk.com/webhook"
+
+    def test_extract_chatbot_message_from_json_string_data(self):
+        """New SDK: message.data can be a JSON string."""
+        from types import SimpleNamespace
+        from gateway.platforms.dingtalk import _IncomingHandler
+
+        callback_msg = SimpleNamespace(data=json.dumps({
+            "msgId": "msg456",
+            "text": "plain text",
+            "senderId": "user2",
+            "conversationId": "conv2",
+            "conversationType": "1",
+            "sessionWebhook": "https://api.dingtalk.com/webhook2",
+        }))
+
+        result = _IncomingHandler._extract_chatbot_message(callback_msg)
+        assert result is not None
+        assert result.message_id == "msg456"
+        assert result.text == "plain text"
+        assert result.sender_id == "user2"
+
+    def test_extract_chatbot_message_returns_none_for_missing_data(self):
+        """Message with no data attribute returns None."""
+        from types import SimpleNamespace
+        from gateway.platforms.dingtalk import _IncomingHandler
+
+        callback_msg = SimpleNamespace()  # No data attribute
+        result = _IncomingHandler._extract_chatbot_message(callback_msg)
+        assert result is None
+
+    def test_extract_chatbot_message_returns_none_for_invalid_json(self):
+        """Message with invalid JSON string data returns None."""
+        from types import SimpleNamespace
+        from gateway.platforms.dingtalk import _IncomingHandler
+
+        callback_msg = SimpleNamespace(data="{not valid json")
+        result = _IncomingHandler._extract_chatbot_message(callback_msg)
+        assert result is None
