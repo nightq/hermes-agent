@@ -70,6 +70,29 @@ class WecomCallbackAdapter(BasePlatformAdapter):
         self._user_app_map: Dict[str, str] = {}
         self._access_tokens: Dict[str, Dict[str, Any]] = {}
 
+    def _is_duplicate(self, msg_id: str) -> bool:
+        """Check if message ID was seen within the dedup TTL window.
+        
+        Returns True if duplicate, False otherwise.
+        """
+        if not msg_id:
+            return False
+        now = time.time()
+        if msg_id in self._seen_messages:
+            # Check if entry is still within TTL
+            if self._seen_messages[msg_id] > now - MESSAGE_DEDUP_TTL_SECONDS:
+                return True
+            # Entry expired, remove it
+            del self._seen_messages[msg_id]
+        self._seen_messages[msg_id] = now
+        # Compact if too large
+        if len(self._seen_messages) > 2000:
+            cutoff = now - MESSAGE_DEDUP_TTL_SECONDS
+            self._seen_messages = {
+                k: v for k, v in self._seen_messages.items() if v > cutoff
+            }
+        return False
+
     # ------------------------------------------------------------------
     # App normalisation
     # ------------------------------------------------------------------
@@ -256,6 +279,16 @@ class WecomCallbackAdapter(BasePlatformAdapter):
                 decrypted = self._decrypt_request(
                     app, body, msg_signature, timestamp, nonce,
                 )
+                # Extract MsgId for deduplication check
+                root = ET.fromstring(decrypted)
+                msg_id = (
+                    root.findtext("MsgId")
+                    or f"{root.findtext('FromUserName', default='')}:{root.findtext('CreateTime', default='0')}"
+                )
+                # Check for duplicate messages
+                if self._is_duplicate(msg_id):
+                    logger.debug(f"[WecomCallback] Duplicate message {msg_id}, acknowledging but not enqueueing")
+                    return web.Response(text="success", content_type="text/plain")
                 event = self._build_event(app, decrypted)
                 if event is not None:
                     # Record which app this user belongs to.
