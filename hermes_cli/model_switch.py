@@ -787,6 +787,7 @@ def list_authenticated_providers(
 
     results: List[dict] = []
     seen_slugs: set = set()
+    seen_display_names: dict[str, str] = {}  # display_name -> hermes_id
 
     data = fetch_models_dev()
 
@@ -827,6 +828,19 @@ def list_authenticated_providers(
         slug = hermes_id
         pinfo = _mdev_pinfo(mdev_id)
         display_name = pinfo.name if pinfo else mdev_id
+
+        # Disambiguate duplicate display names (e.g., kimi-coding vs kimi-coding-cn)
+        if display_name in seen_display_names:
+            # Append region hint based on hermes_id suffix
+            if hermes_id.endswith("-cn"):
+                display_name = f"{display_name} (China)"
+            elif "-" in hermes_id:
+                # Use last segment as disambiguator
+                suffix = hermes_id.split("-")[-1].upper()
+                display_name = f"{display_name} ({suffix})"
+            else:
+                display_name = f"{display_name} ({hermes_id})"
+        seen_display_names[pinfo.name if pinfo else mdev_id] = hermes_id
 
         results.append({
             "slug": slug,
