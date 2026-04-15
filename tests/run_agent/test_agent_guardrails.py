@@ -108,6 +108,35 @@ class TestSanitizeApiMessages:
         assert len(out) == 2
         assert out[1]["tool_call_id"] == "c6"
 
+    def test_tool_call_id_whitespace_stripped(self):
+        """Regression test for #9999: tool_call_id with surrounding whitespace
+        should still match the corresponding assistant tool call."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [assistant_dict_call("functions.cronjob:24")]},
+            tool_result(" functions.cronjob:24 ", "actual result"),
+        ]
+        out = AIAgent._sanitize_api_messages(msgs)
+        # Should NOT inject a stub — the real result should be preserved
+        tool_msgs = [m for m in out if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1
+        assert "Result unavailable" not in tool_msgs[0]["content"]
+        assert tool_msgs[0]["content"] == "actual result"
+
+    def test_tool_call_id_whitespace_orphan_detection(self):
+        """Orphan detection should also work with whitespace-padded IDs."""
+        msgs = [
+            {"role": "assistant", "tool_calls": [assistant_dict_call("c1")]},
+            tool_result("  c_ORPHAN  "),  # whitespace-padded orphan
+        ]
+        out = AIAgent._sanitize_api_messages(msgs)
+        # The orphan (c_ORPHAN) should be removed, and a stub should be injected for c1
+        tool_msgs = [m for m in out if m.get("role") == "tool"]
+        assert len(tool_msgs) == 1  # only the stub for c1
+        assert tool_msgs[0]["tool_call_id"] == "c1"  # stub, not the orphan
+        assert "Result unavailable" in tool_msgs[0]["content"]
+        # Confirm the orphan is gone
+        assert all(m.get("tool_call_id") != "c_ORPHAN" and m.get("tool_call_id") != "  c_ORPHAN  " for m in tool_msgs)
+
 
 # ---------------------------------------------------------------------------
 # Phase 2a — _cap_delegate_task_calls
