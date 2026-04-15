@@ -3289,8 +3289,28 @@ class FeishuAdapter(BasePlatformAdapter):
             content=payload,
             uuid_value=str(uuid.uuid4()),
         )
-        request = self._build_create_message_request("chat_id", body)
+        # Auto-detect receive_id_type based on ID prefix
+        receive_id_type = self._detect_receive_id_type(chat_id)
+        request = self._build_create_message_request(receive_id_type, body)
         return await asyncio.to_thread(self._client.im.v1.message.create, request)
+
+    @staticmethod
+    def _detect_receive_id_type(chat_id: str) -> str:
+        """Detect receive_id_type based on ID prefix.
+        
+        Feishu API requires different receive_id_type values:
+        - oc_* -> chat_id (group chat)
+        - ou_* -> open_id (user)
+        - on_* -> union_id (user with union_id)
+        """
+        if chat_id.startswith("oc_"):
+            return "chat_id"
+        elif chat_id.startswith("ou_"):
+            return "open_id"
+        elif chat_id.startswith("on_"):
+            return "union_id"
+        # Default to open_id for user IDs without prefix
+        return "open_id"
 
     @staticmethod
     def _response_succeeded(response: Any) -> bool:
