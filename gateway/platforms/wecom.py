@@ -730,6 +730,9 @@ class WeComAdapter(BasePlatformAdapter):
 
         aes_key = str(media.get("aeskey") or "").strip()
         if aes_key:
+            from urllib.parse import unquote
+            aes_key = unquote(aes_key)
+            aes_key = aes_key + "=" * ((4 - len(aes_key) % 4) % 4)
             try:
                 raw = self._decrypt_file_bytes(raw, aes_key)
             except Exception as exc:
@@ -772,7 +775,7 @@ class WeComAdapter(BasePlatformAdapter):
     @staticmethod
     def _guess_extension(url: str, content_type: str, fallback: str) -> str:
         ext = mimetypes.guess_extension(content_type) if content_type else None
-        if ext:
+        if ext and ext != ".bin":
             return ext
         path_ext = Path(urlparse(url).path).suffix
         if path_ext:
