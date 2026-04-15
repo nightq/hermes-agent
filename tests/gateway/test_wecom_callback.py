@@ -183,3 +183,25 @@ class TestWecomCallbackPollLoop:
         with pytest.raises(asyncio.CancelledError):
             await task
         assert calls == ["test"]
+
+
+class TestWecomCallbackDedup:
+    def test_is_duplicate_returns_false_for_new_message(self):
+        adapter = WecomCallbackAdapter(_config())
+        assert adapter._is_duplicate("msg-1") is False
+
+    def test_is_duplicate_returns_true_for_recent_message(self):
+        adapter = WecomCallbackAdapter(_config())
+        assert adapter._is_duplicate("msg-1") is False
+        assert adapter._is_duplicate("msg-1") is True
+
+    def test_is_duplicate_expires_after_ttl(self, monkeypatch):
+        import time as _time
+        adapter = WecomCallbackAdapter(_config())
+        assert adapter._is_duplicate("msg-1") is False
+
+        # Simulate time passing beyond TTL
+        fake_now = _time.time() + 400  # MESSAGE_DEDUP_TTL_SECONDS = 300
+        monkeypatch.setattr(_time, "time", lambda: fake_now)
+
+        assert adapter._is_duplicate("msg-1") is False

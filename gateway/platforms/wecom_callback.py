@@ -244,6 +244,24 @@ class WecomCallbackAdapter(BasePlatformAdapter):
                 continue
         return web.Response(status=403, text="signature verification failed")
 
+    def _is_duplicate(self, msg_id: str) -> bool:
+        """Return True if *msg_id* was already seen within the TTL window."""
+        if not msg_id:
+            return False
+        now = time.time()
+        if msg_id in self._seen_messages:
+            if now - self._seen_messages[msg_id] <= MESSAGE_DEDUP_TTL_SECONDS:
+                return True
+            # Expired — remove and allow this message
+            del self._seen_messages[msg_id]
+        self._seen_messages[msg_id] = now
+        if len(self._seen_messages) > 2000:
+            cutoff = now - MESSAGE_DEDUP_TTL_SECONDS
+            self._seen_messages = {
+                k: v for k, v in self._seen_messages.items() if v > cutoff
+            }
+        return False
+
     async def _handle_callback(self, request: web.Request) -> web.Response:
         """POST endpoint — receive an encrypted message callback."""
         msg_signature = request.query.get("msg_signature", "")
@@ -258,6 +276,12 @@ class WecomCallbackAdapter(BasePlatformAdapter):
                 )
                 event = self._build_event(app, decrypted)
                 if event is not None:
+                    if self._is_duplicate(event.message_id):
+                        logger.debug(
+                            "[WecomCallback] Duplicate message %s, skipping",
+                            event.message_id,
+                        )
+                        return web.Response(text="success", content_type="text/plain")
                     # Record which app this user belongs to.
                     if event.source and event.source.user_id:
                         map_key = self._user_app_key(
