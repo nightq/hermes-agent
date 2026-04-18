@@ -131,6 +131,10 @@ async function startSocket() {
     printQRInTerminal: false,
     browser: ['Hermes Agent', 'Chrome', '120.0'],
     syncFullHistory: false,
+    // Required when syncFullHistory is false in Baileys 7.x:
+    // Without this callback, Baileys enters an infinite sync loop.
+    // Return false to skip all history sync messages.
+    shouldSyncHistoryMessage: () => false,
     markOnlineOnConnect: false,
     // Required for Baileys 7.x: without this, incoming messages that need
     // E2EE session re-establishment are silently dropped (msg.message === null)
